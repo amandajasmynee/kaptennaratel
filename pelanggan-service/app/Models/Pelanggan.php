@@ -6,14 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Pelanggan extends Model
 {
-    // Nama tabel di database
     protected $table = 'pelanggan';
 
-    // Kolom-kolom yang boleh diisi secara massal (fillable)
     protected $fillable = [
-        'kode_pelanggan',        // Auto-generated kode unik pelanggan (ex: PLG001)
+        'kode_pelanggan',
         'nama_pelanggan',
-        'password_pelanggan',    // Jika digunakan (opsional), bisa disimpan hash
+        'password_pelanggan',
         'alamat_pelanggan',
         'rt',
         'rw',
@@ -21,19 +19,23 @@ class Pelanggan extends Model
         'kecamatan',
         'telp_user',
         'id_telegram',
-        'status_log',            // Status internal atau log proses
-        'status_followup',       // Status follow-up pelanggan
-        'stts_send_survei',      // Status pengiriman survei
+        'status_log',
+        'status_followup',
+        'stts_send_survei',
         'log_aktivasi',
         'va_bri',
         'va_bca',
-        'unit_id',               // Relasi ke unit-service (via API, bukan FK)
-        'harga_paket_id',        // Relasi ke harga-paket-service
-        'no_combo',              // Nomor combo / kode teknis
-        'log_username_dcp',      // Log teknisi/agen
-        'pendaftaran_id',        // ID dari pendaftaran awal (opsional)
+        'unit_id',
+        'harga_paket_id',
+        'no_combo',
+        'log_username_dcp',
+        'pendaftaran_id',
     ];
 
-    // Jika menggunakan kolom created_at dan updated_at
     public $timestamps = true;
+
+    // <<< penting untuk dashboard berbasis log_aktivasi
+    protected $casts = [
+        'log_aktivasi' => 'datetime',
+    ];
 }
