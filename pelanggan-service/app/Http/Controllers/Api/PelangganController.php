@@ -13,19 +13,32 @@ class PelangganController extends Controller
 {
     public function index(Request $request)
     {
-        $perPage = $request->get('per_page', 10);
-        $pelangganList = Pelanggan::orderBy('created_at')->paginate($perPage);
+        // Pakai query() (bukan get()) dan sanitize
+        $perPage = max(1, (int) $request->query('per_page', 10));
+        $page    = max(1, (int) $request->query('page', 1));
 
-        $formatted = $pelangganList->getCollection()->map(function ($pelanggan) {
-            return $this->formatPelangganData($pelanggan);
-        });
+        // Paginator DI-PAKSA mengikuti page dari client
+        $paginator = Pelanggan::orderBy('created_at', 'asc')
+            ->paginate($perPage, ['*'], 'page', $page);
 
+        // Map ke format custom kamu, lalu tempel balik ke paginator
+        $mapped = $paginator->getCollection()
+            ->map(fn ($pelanggan) => $this->formatPelangganData($pelanggan))
+            ->values();
+
+        $paginator->setCollection($mapped);
+
+        // Kembalikan payload yang konsisten + field debug
         return response()->json([
-            'status'       => 'success',
-            'data'         => $formatted,
-            'current_page' => $pelangganList->currentPage(),
-            'last_page'    => $pelangganList->lastPage(),
-            'total'        => $pelangganList->total(),
+            'status'          => 'success',
+            'requested_page'  => $page,                  // ← buat verifikasi cepat di Network tab
+            'per_page'        => $perPage,
+            'data'            => $paginator->items(),    // ← hasil map, tetap dari paginator
+            'current_page'    => $paginator->currentPage(),
+            'last_page'       => $paginator->lastPage(),
+            'total'           => $paginator->total(),
+            'from'            => $paginator->firstItem(),
+            'to'              => $paginator->lastItem(),
         ]);
     }
 
@@ -64,6 +77,11 @@ class PelangganController extends Controller
             $paketResponse = Http::timeout(3)->get(env('HARGA_PAKET_SERVICE_URL') . "/api/harga-paket/{$validated['harga_paket_id']}");
             if ($paketResponse->failed()) {
                 return response()->json(['status' => 'error', 'message' => 'Harga paket tidak ditemukan'], 404);
+            }
+            $json  = $paketResponse->json();
+            $paket = $json['data'] ?? $json;
+            if (!$this->isPaketEnabled((array) $paket)) {
+                return response()->json(['status' => 'error', 'message' => 'Harga paket tidak aktif'], 422);
             }
         }
 
@@ -162,6 +180,11 @@ class PelangganController extends Controller
             if ($paketResponse->failed()) {
                 return response()->json(['status' => 'error', 'message' => 'Harga paket tidak valid'], 404);
             }
+            $json  = $paketResponse->json();
+            $paket = $json['data'] ?? $json;
+            if (!$this->isPaketEnabled((array) $paket)) {
+                return response()->json(['status' => 'error', 'message' => 'Harga paket tidak aktif'], 422);
+            }
         }
 
         $pelanggan->update($validated);
@@ -205,9 +228,27 @@ class PelangganController extends Controller
         return $arr;
     }
 
+    // ===== Helper status paket aktif/enabled (dipakai di store/update/format) =====
+    private function isPaketEnabled(array $data): bool
+    {
+        $keys = ['enable','enabled','is_enable','is_enabled','active','is_active','aktif','status'];
+        foreach ($keys as $k) {
+            if (!array_key_exists($k, $data)) continue;
+            $v = $data[$k];
+            if (is_bool($v))    return $v;
+            if (is_numeric($v)) return ((int) $v) === 1;
+            if (is_string($v)) {
+                $s = strtolower(trim($v));
+                if (in_array($s, ['1','true','on','yes','enable','enabled','active','aktif'], true)) return true;
+                if (in_array($s, ['0','false','off','no','disable','disabled','inactive','nonaktif','non-aktif'], true)) return false;
+            }
+        }
+        // tidak ada flag → anggap tidak aktif
+        return false;
+    }
+
     // ================== METRICS & DASHBOARD ==================
 
-    // Total per minggu (pakai basis dinamis)
     public function weeklyRegistrations(Request $r)
     {
         $weeks = (int) $r->query('weeks', 12);
@@ -236,7 +277,6 @@ class PelangganController extends Controller
         ]);
     }
 
-    // Stacked per unit per minggu (pakai basis dinamis)
     public function weeklyByUnit(Request $r)
     {
         $weeks         = (int) $r->query('weeks', 12);
@@ -305,7 +345,6 @@ class PelangganController extends Controller
         ]);
     }
 
-    // Dashboard ringkas (weekly total + per unit) — basis dinamis
     public function dashboard(Request $r)
     {
         $weeks         = (int) $r->query('weeks', 12);
@@ -382,7 +421,6 @@ class PelangganController extends Controller
         ]);
     }
 
-    // Detail satu minggu (harian Sen–Min) + per unit (harian) — basis dinamis
     public function dashboardWeek(Request $r)
     {
         $tz            = 'Asia/Jakarta';
@@ -488,9 +526,14 @@ class PelangganController extends Controller
                 if ($response->successful()) {
                     $json = $response->json();
                     $data = $json['data'] ?? $json;
-                    if (isset($data['alias_paket'])) {
+
+                    // Hanya tampilkan detail paket kalau aktif
+                    if ($this->isPaketEnabled((array) $data) && isset($data['alias_paket'])) {
                         $harga = $data;
                         $harga['id'] = $pelanggan->harga_paket_id;
+                    } else {
+                        // Paket non-aktif → jangan tampilkan alias/keterangan
+                        $harga = ['id' => $pelanggan->harga_paket_id];
                     }
                 }
             } catch (\Exception $e) {

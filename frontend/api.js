@@ -1,18 +1,13 @@
 // =====================================================
-// Base URLs
+// Base URLs (fixed)
 // =====================================================
-export const API_UNITS_BASE_URL = "http://localhost:8001/api/units";
-export const API_PAKET_BASE_URL = "http://localhost:8002/api/harga-paket";
+export const API_UNITS_BASE_URL     = "http://localhost:8001/api/units";
+export const API_PAKET_BASE_URL     = "http://localhost:8002/api/harga-paket";
 export const API_PELANGGAN_BASE_URL = "http://localhost:8003/api/pelanggan";
 
-// Root 8003 untuk endpoint /api/dashboard
-export const API_ROOT_8003 = (() => {
-  try {
-    return API_PELANGGAN_BASE_URL.replace(/\/pelanggan\/?$/, "");
-  } catch {
-    return "http://localhost:8003/api";
-  }
-})();
+// ❗ Tetapkan eksplisit; jangan gunakan .replace(...)
+// untuk menghindari URL aggregate yang salah.
+export const API_ROOT_8003 = "http://localhost:8003/api";
 
 // =====================================================
 // Helpers: anti-cache + timeout fetch
@@ -42,12 +37,20 @@ async function fetchJson(url, opts = {}) {
       headers,
       signal: controller.signal,
     });
+
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(
-        `[${res.status}] ${res.statusText} ${text ? "- " + text : ""}`
-      );
+      // Log detail agar gampang debugging (status + body ringkas)
+      let body = "";
+      try {
+        const ct = res.headers.get("content-type") || "";
+        body = ct.includes("application/json")
+          ? JSON.stringify(await res.json())
+          : await res.text();
+      } catch {}
+      console.error("[fetchJson] FAIL", { url, status: res.status, statusText: res.statusText, body });
+      throw new Error(`[${res.status}] ${res.statusText}${body ? " - " + body : ""}`);
     }
+
     return await res.json();
   } finally {
     clearTimeout(to);
@@ -98,6 +101,21 @@ export async function updateUnit(id, data) {
 // =====================================================
 // HARGA PAKET
 // =====================================================
+
+// helper flag aktif/enabled di response paket
+function isEnabledFlag(p) {
+  const v =
+    p?.enable ?? p?.enabled ?? p?.is_enable ?? p?.is_enabled ??
+    p?.active ?? p?.is_active ?? p?.aktif ?? p?.status;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return ["1", "true", "on", "yes", "enable", "enabled", "active", "aktif"].includes(s);
+  }
+  return false;
+}
+
 export async function getHargaPaket(page = 1, perPage = 10) {
   const url = `${API_PAKET_BASE_URL}?page=${page}&per_page=${perPage}`;
   try {
@@ -117,7 +135,13 @@ export async function getHargaPaket(page = 1, perPage = 10) {
 export async function getAllHargaPaket() {
   const url = `${API_PAKET_BASE_URL}/all`;
   const result = await fetchJson(url);
-  return { data: result.data || [] };
+  const all = result.data || result || [];
+  return { data: (Array.isArray(all) ? all : []).filter(isEnabledFlag) };
+}
+
+// (opsional) alias yang lebih eksplisit
+export async function getAllHargaPaketEnabled() {
+  return getAllHargaPaket();
 }
 
 export async function getSingleHargaPaket(id) {
@@ -203,7 +227,7 @@ export async function getDashboardWeek(
   return await fetchJson(url);
 }
 
-// GET /api/dashboard/aggregate — harian/mingguan/bulanan (support start/end date)
+/** GET /api/dashboard/aggregate — harian/mingguan/bulanan (support start/end date) */
 export async function getDashboardAggregate(
   group = "week",        // 'day' | 'week' | 'month'
   periods = 12,

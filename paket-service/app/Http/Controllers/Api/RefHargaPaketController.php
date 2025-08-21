@@ -9,49 +9,43 @@ use Illuminate\Support\Facades\Log;
 
 class RefHargaPaketController extends Controller
 {
-    /**
-     * Tampilkan semua data harga paket.
-     */
     public function index(Request $request)
     {
-        $perPage = $request->get('per_page', 10);
-        $data = RefHargaPaket::orderBy('log_key', 'asc')->paginate($perPage);
+        $perPage = max(1, (int) $request->query('per_page', 10));
+        $page    = max(1, (int) $request->query('page', 1));
+
+        $query = RefHargaPaket::orderBy('log_key', 'asc');
+
+        $paginated = $query->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
-            'status' => 'success',
-            'data' => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page' => $data->lastPage(),
-            'total' => $data->total(),
+            'status'         => 'success',
+            'data'           => $paginated->items(),
+            'requested_page' => $page,
+            'current_page'   => $paginated->currentPage(),
+            'last_page'      => $paginated->lastPage(),
+            'per_page'       => $paginated->perPage(),
+            'total'          => $paginated->total(),
         ]);
     }
 
-    /**
-     * Tampilkan satu data harga paket.
-     */
     public function show($id)
     {
         $paket = RefHargaPaket::where('log_key', $id)->first();
 
         if (!$paket) {
-            // Perbaikan: Mengembalikan format JSON yang konsisten untuk error
             return response()->json(['status' => 'error', 'message' => 'Paket tidak ditemukan'], 404);
         }
 
-        // Perbaikan: Mengembalikan format JSON yang konsisten
         return response()->json([
             'status' => 'success',
-            'data' => $paket,
+            'data'   => $paket,
         ]);
     }
 
-    /**
-     * Simpan data harga paket baru.
-     */
     public function store(Request $request)
     {
-        // Perbaikan: Menambahkan log untuk debugging
-        Log::info('API Store Harga Paket: Menerima permintaan untuk menambah data paket baru.', ['data' => $request->all()]);
+        Log::info('API Store Harga Paket', ['data' => $request->all()]);
 
         $validated = $request->validate([
             'alias_paket'    => 'required|string|max:150',
@@ -66,34 +60,21 @@ class RefHargaPaketController extends Controller
             'jenis_paket'    => 'nullable|string|max:100',
         ]);
 
-        try {
-            // Perbaikan: Menangani proses penyimpanan dengan try...catch
-            $paket = RefHargaPaket::create($validated);
-        } catch (\Exception $e) {
-            Log::error('Gagal menyimpan paket baru: ' . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Gagal menyimpan paket.'], 500);
-        }
+        $paket = RefHargaPaket::create($validated);
 
-        // Perbaikan: Mengembalikan format JSON yang konsisten
         return response()->json([
-            'status' => 'success',
+            'status'  => 'success',
             'message' => 'Paket berhasil ditambahkan',
-            'data' => $paket,
+            'data'    => $paket,
         ], 201);
     }
 
-    /**
-     * Perbarui data harga paket.
-     */
     public function update(Request $request, $id)
     {
-        // Perbaikan: Menambahkan log untuk debugging
-        Log::info('API Update Harga Paket: Menerima permintaan untuk memperbarui data paket.', ['id' => $id, 'data' => $request->all()]);
+        Log::info('API Update Harga Paket', ['id' => $id, 'data' => $request->all()]);
 
         $paket = RefHargaPaket::where('log_key', $id)->first();
-
         if (!$paket) {
-            // Perbaikan: Mengembalikan format JSON yang konsisten untuk error
             return response()->json(['status' => 'error', 'message' => 'Paket tidak ditemukan'], 404);
         }
 
@@ -112,39 +93,33 @@ class RefHargaPaketController extends Controller
 
         $paket->update($validated);
 
-        // Perbaikan: Mengembalikan format JSON yang konsisten
         return response()->json([
-            'status' => 'success',
+            'status'  => 'success',
             'message' => 'Paket berhasil diperbarui',
-            'data' => $paket,
+            'data'    => $paket,
         ]);
     }
 
-    /**
-     * Hapus data harga paket.
-     */
     public function destroy($id)
     {
         $paket = RefHargaPaket::where('log_key', $id)->first();
 
         if (!$paket) {
-            // Perbaikan: Mengembalikan format JSON yang konsisten untuk error
             return response()->json(['status' => 'error', 'message' => 'Paket tidak ditemukan'], 404);
         }
 
         $paket->delete();
 
-        // Perbaikan: Mengembalikan format JSON yang konsisten
         return response()->json(['status' => 'success', 'message' => 'Paket berhasil dihapus']);
     }
 
     public function all()
     {
-        $allHargaPaket = RefHargaPaket::orderBy('alias_paket')->get();
+        $allHargaPaket = RefHargaPaket::orderBy('log_key', 'asc')->get();
 
         return response()->json([
             'status' => 'success',
-            'data' => $allHargaPaket
+            'data'   => $allHargaPaket
         ]);
     }
 }
